@@ -16,7 +16,7 @@ import { checkForAppUpdate, discardAppUpdate, downloadAppUpdate, installAppUpdat
 import type { AppUpdateInfo } from "./lib/appUpdate";
 import { copy, nextLanguage, normalizeLanguage } from "./lib/i18n";
 import { normalizeProviderOrder } from "./lib/providers";
-import { prepareSurfaceCrossfade, waitForSurfacePaint } from "./lib/windowTransition";
+import { cancelSurfaceCrossfade, prepareSurfaceCrossfade, waitForSurfacePaint } from "./lib/windowTransition";
 import { detectRecentCodexReset, isRecentCodexReset } from "./lib/resetDetection";
 import type { RecentCodexReset } from "./lib/resetDetection";
 import { trackedQuotaWindows } from "./lib/quotaPace";
@@ -39,7 +39,7 @@ import { usageDateKey } from "./lib/usageDay";
 import { CODEX_RESETS_URL } from "./lib/externalLinks";
 import { useWebsiteResetProbability } from "./lib/useWebsiteResetProbability";
 import { buildMidnightQuotaPlan } from "./lib/midnightQuotaPlan";
-import type { AppDiagnostics, ComfortCode, ComfortPrompt, ProviderId, ProviderSnapshot, ResetForecast, RuntimeState, VolcengineDiagnostics, WidgetPreferences } from "./types";
+import type { AppDiagnostics, ComfortCode, ComfortPrompt, ProviderId, ProviderSnapshot, ResetForecast, RuntimeState, VolcengineDiagnostics, WidgetPreferences, WindowCompactLayout } from "./types";
 
 const DEFAULT_PREFS = DEFAULT_WIDGET_PREFERENCES;
 
@@ -115,6 +115,8 @@ export default function App() {
   const preferenceSaveSequence = useRef(0);
   const planEditSequence = useRef(0);
   const planSaveQueue = useRef<Promise<void>>(Promise.resolve());
+  const compactLayoutRef = useRef<WindowCompactLayout>("float");
+  const compactCapsuleWidthRef = useRef<number | undefined>(undefined);
   const language = normalizeLanguage(preferences.language);
   const t = copy[language];
   const resolvedAppearance = resolveAppearanceMode(preferences.appearanceMode, systemDark);
@@ -454,9 +456,15 @@ export default function App() {
   }, [t.errorUnavailable]);
 
   const closeControlSurface = useCallback(async () => {
+    cancelSurfaceCrossfade();
     if (controlOpenRef.current) await closeControlCenterWindow();
     controlOpenRef.current = false;
     setControlOpen(false);
+    const stay = effectiveStayExpanded(preferencesRef.current);
+    if (!stay) {
+      setCompact(true);
+      void setWidgetExpanded(false, compactLayoutRef.current, undefined, compactCapsuleWidthRef.current).catch(() => undefined);
+    }
   }, []);
 
   const openVolcengineDiagnostics = useCallback(async () => {
@@ -509,6 +517,7 @@ export default function App() {
       void refresh(true);
     });
     return () => {
+      cancelSurfaceCrossfade();
       for (const timer of consumptionTimers.current.values()) window.clearTimeout(timer);
       consumptionTimers.current.clear();
       if (collapseTimer.current !== null) window.clearTimeout(collapseTimer.current);
@@ -667,6 +676,8 @@ export default function App() {
   const compactCapsuleWidth = compactLayout === "capsule"
     ? capsuleLogicalWidth(compactCapsuleRatio, preferences.fontScale)
     : undefined;
+  compactLayoutRef.current = compactLayout;
+  compactCapsuleWidthRef.current = compactCapsuleWidth;
   const dailyPersonCosts = useMemo(() => {
     const costs = buildDailyPersonCosts(comfortUsage, planningNow, preferences.personRingColors);
     return comfortUsageError ? { ...costs, partial: true } : costs;
@@ -1012,7 +1023,7 @@ export default function App() {
   }, [compactLayout, controlOpen, stayExpanded]);
 
   useEffect(() => {
-    if (!compact || stayExpanded || controlOpen || widgetTransitioning.current) return;
+    if (!compact || stayExpanded || controlOpen || controlOpenRef.current || widgetTransitioning.current) return;
     void setWidgetExpanded(false, compactLayout, undefined, compactCapsuleWidth).catch(() => setOperationError("Widget layout resize failed."));
   }, [compact, compactCapsuleWidth, compactLayout, controlOpen, stayExpanded]);
 
@@ -1163,6 +1174,7 @@ export default function App() {
       onUpdateRelease={handleUpdateRelease}
       controlOpen={controlOpen}
       onControlOpen={() => {
+        cancelSurfaceCrossfade();
         controlOpenRef.current = true;
         // Cancel an already queued collapse before it can shrink the control center.
         ++hoverSequence.current;

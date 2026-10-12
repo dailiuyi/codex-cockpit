@@ -10,6 +10,7 @@ import type { ComfortFeedbackRecord, ProviderSnapshot, ResetForecast, ResetWatch
 import { fetchCodexResetForecast, fetchWebsiteResetProbability, setWidgetExpanded, openControlCenterWindow } from "./lib/bridge";
 import type { TokeiUsage } from "./lib/tokeiUsage";
 import { savePersonPlan, planDateKey } from "./lib/personPlanSync";
+import { cancelSurfaceCrossfade } from "./lib/windowTransition";
 
 vi.mock("./lib/personPlanSync", async (importOriginal) => ({
   ...await importOriginal<typeof import("./lib/personPlanSync")>(),
@@ -128,6 +129,7 @@ vi.mock("./lib/appUpdate", () => ({
 }));
 
 vi.mock("./lib/windowTransition", () => ({
+  cancelSurfaceCrossfade: vi.fn(),
   prepareSurfaceCrossfade: () => ({ start: vi.fn(), cancel: vi.fn() }),
   waitForSurfacePaint: vi.fn(async () => undefined),
 }));
@@ -239,8 +241,13 @@ describe("App comfort persistence regressions", () => {
     await expandApp();
     await waitFor(() => expect(vi.mocked(setWidgetExpanded).mock.calls.some(call => call[0] === true)).toBe(true));
     vi.mocked(setWidgetExpanded).mockClear();
+    vi.mocked(cancelSurfaceCrossfade).mockClear();
+    vi.mocked(openControlCenterWindow).mockClear();
     fireEvent.click(screen.getByRole("button", { name: "leave then open control" }));
     await waitFor(() => expect(openControlCenterWindow).toHaveBeenCalled());
+    expect(cancelSurfaceCrossfade).toHaveBeenCalledOnce();
+    expect(vi.mocked(cancelSurfaceCrossfade).mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(openControlCenterWindow).mock.invocationCallOrder[0]);
     await new Promise(resolve => setTimeout(resolve, 150));
     expect(vi.mocked(setWidgetExpanded).mock.calls.some(call => call[0] === false)).toBe(false);
   });

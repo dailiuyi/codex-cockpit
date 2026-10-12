@@ -1653,11 +1653,14 @@ pub async fn get_codex_project_usage_with_catalog(
     // A timed-out blocking filesystem operation must not create an unbounded
     // queue of workers waiting for the same collector lock.
     static FLIGHT: OnceLock<std::sync::Arc<tokio::sync::Semaphore>> = OnceLock::new();
-    let permit = FLIGHT
+    let flight_sem = FLIGHT
         .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(1)))
-        .clone()
-        .try_acquire_owned()
-        .map_err(|_| "collector_busy".to_owned())?;
+        .clone();
+    let permit =
+        match tokio::time::timeout(Duration::from_secs(5), flight_sem.acquire_owned()).await {
+            Ok(Ok(p)) => p,
+            _ => return Err("collector_busy".to_owned()),
+        };
     tauri::async_runtime::spawn_blocking(move || {
         let _permit = permit;
         if app_catalog.as_deref().is_some_and(|path| !safe_path(path)) {

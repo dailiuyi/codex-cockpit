@@ -19,8 +19,8 @@
         "height": 100,
         "minWidth": 80,
         "minHeight": 32,
-        "maxWidth": 760,
-        "maxHeight": 1200,
+        "maxWidth": 1600,
+        "maxHeight": 2400,
         "resizable": true,
         "decorations": false,
         "transparent": true,
@@ -29,7 +29,7 @@
         "skipTaskbar": true,
         "shadow": false,
         "backgroundThrottling": "disabled",
-        "focus": false,
+        "focus": true,
         "visible": true
       }
     ],

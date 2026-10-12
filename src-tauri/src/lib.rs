@@ -38,7 +38,13 @@ use objc2_app_kit::{
 #[cfg(target_os = "macos")]
 use objc2_foundation::{NSPoint, NSRect, NSSize};
 
-#[cfg(any(debug_assertions, target_os = "macos", target_os = "windows", test))]
+#[cfg(any(
+    debug_assertions,
+    target_os = "macos",
+    target_os = "windows",
+    target_os = "linux",
+    test
+))]
 use models::UsageWindow;
 use models::{ProviderSnapshot, WidgetPreferences};
 use serde::{Deserialize, Serialize};
@@ -1266,6 +1272,31 @@ fn current_widget_rect(window: &tauri::WebviewWindow) -> Result<WidgetRect, Stri
     })
 }
 
+#[cfg(target_os = "linux")]
+fn linux_scale_factor() -> Option<f64> {
+    if let Some(scale_str) = std::env::var_os("GDK_SCALE") {
+        if let Ok(scale) = scale_str.to_string_lossy().parse::<f64>() {
+            if scale > 0.0 {
+                return Some(scale);
+            }
+        }
+    }
+    if let Ok(output) = std::process::Command::new("xrdb").arg("-query").output() {
+        if let Ok(text) = std::str::from_utf8(&output.stdout) {
+            for line in text.lines() {
+                if let Some(rest) = line.strip_prefix("Xft.dpi:") {
+                    if let Ok(dpi) = rest.trim().parse::<f64>() {
+                        if dpi > 0.0 {
+                            return Some(dpi / 96.0);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 fn monitor_and_scale(
     window: &tauri::WebviewWindow,
 ) -> Result<(Option<tauri::Monitor>, f64), String> {
@@ -1276,6 +1307,12 @@ fn monitor_and_scale(
         .as_ref()
         .map(|item| item.scale_factor())
         .unwrap_or(1.0);
+    #[cfg(target_os = "linux")]
+    let scale_factor = if scale_factor <= 1.0 {
+        linux_scale_factor().unwrap_or(scale_factor)
+    } else {
+        scale_factor
+    };
     Ok((monitor, scale_factor))
 }
 
@@ -1427,6 +1464,13 @@ fn resize_expanded_widget(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    if *state
+        .control_center_owner
+        .lock()
+        .map_err(|_| "window owner unavailable".to_string())?
+    {
+        return Ok(());
+    }
     let Some(ticket) = reserve_geometry_transition(
         &state.control_center_owner,
         &state.transition_generation,
@@ -1439,6 +1483,13 @@ fn resize_expanded_widget(
         .window_geometry_lock
         .lock()
         .map_err(|_| "window geometry unavailable".to_string())?;
+    if *state
+        .control_center_owner
+        .lock()
+        .map_err(|_| "window owner unavailable".to_string())?
+    {
+        return Ok(());
+    }
     if state.transition_generation.load(Ordering::SeqCst) != ticket {
         return Ok(());
     }
@@ -1604,7 +1655,15 @@ fn open_control_center(
     )?;
     window
         .set_focus()
-        .map_err(|_| "failed to focus control center".to_string())
+        .map_err(|_| "failed to focus control center".to_string())?;
+    // On GTK, presenting the top-level window does not grab focus for its
+    // WebKit child. Explicitly focus both so text fields can receive input.
+    #[cfg(target_os = "linux")]
+    window
+        .as_ref()
+        .set_focus()
+        .map_err(|_| "failed to focus control center webview".to_string())?;
+    Ok(())
 }
 
 #[tauri::command(async)]
@@ -2309,6 +2368,13 @@ fn collapse_widget(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
+    if *state
+        .control_center_owner
+        .lock()
+        .map_err(|_| "window owner unavailable".to_string())?
+    {
+        return Ok(());
+    }
     let Some(ticket) = reserve_geometry_transition(
         &state.control_center_owner,
         &state.transition_generation,
@@ -2321,6 +2387,13 @@ fn collapse_widget(
         .window_geometry_lock
         .lock()
         .map_err(|_| "window geometry unavailable".to_string())?;
+    if *state
+        .control_center_owner
+        .lock()
+        .map_err(|_| "window owner unavailable".to_string())?
+    {
+        return Ok(());
+    }
     if state.transition_generation.load(Ordering::SeqCst) != ticket {
         return Ok(());
     }
@@ -2675,8 +2748,8 @@ fn set_widget_always_on_top(
     Ok(next)
 }
 
-// macOS uses a template foreground; Windows needs a visible color on both taskbar themes.
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
+// macOS uses a template foreground; Windows and Linux need a visible color on taskbar/panel themes.
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux", test))]
 fn quota_tray_ring(
     remaining: Option<f64>,
     short: Option<Option<f64>>,
@@ -2702,7 +2775,7 @@ fn quota_tray_ring(
                 };
                 alpha = alpha.max(coverage * opacity);
             }
-            #[cfg(target_os = "windows")]
+            #[cfg(any(target_os = "windows", target_os = "linux"))]
             rgba[(y * size + x) * 4..(y * size + x) * 4 + 3].copy_from_slice(&[57, 122, 224]);
             rgba[(y * size + x) * 4 + 3] = alpha as u8;
         }
@@ -2710,7 +2783,7 @@ fn quota_tray_ring(
     tauri::image::Image::new_owned(rgba, size as u32, size as u32)
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows", test))]
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux", test))]
 fn quota_tray_values(
     snapshot: &ProviderSnapshot,
 ) -> (Option<f64>, Option<Option<f64>>, Option<f64>) {
@@ -2745,7 +2818,7 @@ fn quota_tray_values(
 }
 
 fn update_quota_tray(app: &AppHandle, values: &[ProviderSnapshot]) {
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     if let Some(tray) = app.tray_by_id("main") {
         let (remaining, short, primary) = values
             .iter()
@@ -2761,6 +2834,10 @@ fn update_quota_tray(app: &AppHandle, values: &[ProviderSnapshot]) {
             let _ = tray.set_icon_as_template(true);
             let _ = tray.set_title(Some(&title));
         }
+        #[cfg(target_os = "linux")]
+        {
+            let _ = tray.set_title(Some(&title));
+        }
         let tooltip = if short.is_some() {
             let weekly = remaining
                 .map(|value| format!("{value:.0}%"))
@@ -2771,7 +2848,7 @@ fn update_quota_tray(app: &AppHandle, values: &[ProviderSnapshot]) {
         };
         let _ = tray.set_tooltip(Some(&tooltip));
     }
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    #[cfg(not(any(target_os = "macos", target_os = "windows", target_os = "linux")))]
     let _ = (app, values);
 }
 
@@ -2862,6 +2939,10 @@ fn setup_tray(app: &tauri::App) -> tauri::Result<()> {
     #[cfg(not(target_os = "macos"))]
     if let Some(icon) = app.default_window_icon() {
         builder = builder.icon(icon.clone());
+    }
+    #[cfg(target_os = "linux")]
+    {
+        builder = builder.title("—");
     }
     let autostart_menu = autostart.clone();
     let show_menu = show.clone();
