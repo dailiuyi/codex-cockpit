@@ -558,16 +558,22 @@ pub async fn get_tokei_usage(app: tauri::AppHandle) -> Result<TokeiUsage, String
     tauri::async_runtime::spawn_blocking(move || {
         let mut usage = load_usage(&home, settings);
         crate::usage_sync::merge_managed_usage(&data_dir, &mut usage);
-        let device_id = crate::usage_sync::settings_at(&data_dir)
-            .ok()
-            .flatten()
-            .map(|settings| settings.device_id)
-            .or_else(|| config(&home)["device_id"].as_str().map(str::to_owned));
-        usage.local_group_id = local_group_id(&usage.groups, device_id.as_deref());
-        usage
+        let device_id = crate::usage_sync::local_device_id(&data_dir, &home)?;
+        if !usage.devices.iter().any(|device| device.id == device_id) {
+            usage.devices.push(DeviceUsage {
+                id: device_id.clone(),
+                updated_at: None,
+                stale: true,
+                collection_partial: true,
+                daily: BTreeMap::new(),
+                ranges: BTreeMap::new(),
+            });
+        }
+        usage.local_group_id = local_group_id(&usage.groups, Some(&device_id));
+        Ok::<_, String>(usage)
     })
     .await
-    .map_err(|_| "source_unavailable".into())
+    .map_err(|_| "source_unavailable".to_owned())?
 }
 
 fn local_group_id(groups: &[UsageGroup], device_id: Option<&str>) -> Option<String> {
