@@ -1464,13 +1464,6 @@ fn resize_expanded_widget(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    if *state
-        .control_center_owner
-        .lock()
-        .map_err(|_| "window owner unavailable".to_string())?
-    {
-        return Ok(());
-    }
     let Some(ticket) = reserve_geometry_transition(
         &state.control_center_owner,
         &state.transition_generation,
@@ -1483,13 +1476,6 @@ fn resize_expanded_widget(
         .window_geometry_lock
         .lock()
         .map_err(|_| "window geometry unavailable".to_string())?;
-    if *state
-        .control_center_owner
-        .lock()
-        .map_err(|_| "window owner unavailable".to_string())?
-    {
-        return Ok(());
-    }
     if state.transition_generation.load(Ordering::SeqCst) != ticket {
         return Ok(());
     }
@@ -2368,13 +2354,6 @@ fn collapse_widget(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
-    if *state
-        .control_center_owner
-        .lock()
-        .map_err(|_| "window owner unavailable".to_string())?
-    {
-        return Ok(());
-    }
     let Some(ticket) = reserve_geometry_transition(
         &state.control_center_owner,
         &state.transition_generation,
@@ -2387,13 +2366,6 @@ fn collapse_widget(
         .window_geometry_lock
         .lock()
         .map_err(|_| "window geometry unavailable".to_string())?;
-    if *state
-        .control_center_owner
-        .lock()
-        .map_err(|_| "window owner unavailable".to_string())?
-    {
-        return Ok(());
-    }
     if state.transition_generation.load(Ordering::SeqCst) != ticket {
         return Ok(());
     }

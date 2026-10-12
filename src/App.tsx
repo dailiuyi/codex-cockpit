@@ -39,7 +39,7 @@ import { usageDateKey } from "./lib/usageDay";
 import { CODEX_RESETS_URL } from "./lib/externalLinks";
 import { useWebsiteResetProbability } from "./lib/useWebsiteResetProbability";
 import { buildMidnightQuotaPlan } from "./lib/midnightQuotaPlan";
-import type { AppDiagnostics, ComfortCode, ComfortPrompt, ProviderId, ProviderSnapshot, ResetForecast, RuntimeState, VolcengineDiagnostics, WidgetPreferences, WindowCompactLayout } from "./types";
+import type { AppDiagnostics, ComfortCode, ComfortPrompt, ProviderId, ProviderSnapshot, ResetForecast, RuntimeState, VolcengineDiagnostics, WidgetPreferences } from "./types";
 
 const DEFAULT_PREFS = DEFAULT_WIDGET_PREFERENCES;
 
@@ -115,8 +115,6 @@ export default function App() {
   const preferenceSaveSequence = useRef(0);
   const planEditSequence = useRef(0);
   const planSaveQueue = useRef<Promise<void>>(Promise.resolve());
-  const compactLayoutRef = useRef<WindowCompactLayout>("float");
-  const compactCapsuleWidthRef = useRef<number | undefined>(undefined);
   const language = normalizeLanguage(preferences.language);
   const t = copy[language];
   const resolvedAppearance = resolveAppearanceMode(preferences.appearanceMode, systemDark);
@@ -455,16 +453,13 @@ export default function App() {
     }
   }, [t.errorUnavailable]);
 
-  const closeControlSurface = useCallback(async () => {
+  const closeControlSurface = useCallback(async (collapse = false) => {
     cancelSurfaceCrossfade();
     if (controlOpenRef.current) await closeControlCenterWindow();
     controlOpenRef.current = false;
     setControlOpen(false);
-    const stay = effectiveStayExpanded(preferencesRef.current);
-    if (!stay) {
-      setCompact(true);
-      void setWidgetExpanded(false, compactLayoutRef.current, undefined, compactCapsuleWidthRef.current).catch(() => undefined);
-    }
+    // Panel switches keep the widget expanded; explicit close uses the layout effect.
+    if (collapse && !effectiveStayExpanded(preferencesRef.current)) setCompact(true);
   }, []);
 
   const openVolcengineDiagnostics = useCallback(async () => {
@@ -676,8 +671,6 @@ export default function App() {
   const compactCapsuleWidth = compactLayout === "capsule"
     ? capsuleLogicalWidth(compactCapsuleRatio, preferences.fontScale)
     : undefined;
-  compactLayoutRef.current = compactLayout;
-  compactCapsuleWidthRef.current = compactCapsuleWidth;
   const dailyPersonCosts = useMemo(() => {
     const costs = buildDailyPersonCosts(comfortUsage, planningNow, preferences.personRingColors);
     return comfortUsageError ? { ...costs, partial: true } : costs;
@@ -1218,7 +1211,7 @@ export default function App() {
           onUsageGroupsChange={refreshComfortUsage}
           onCheckUpdate={() => void handleUpdateOpen()}
           onClose={() => {
-            void closeControlSurface().catch(() => setOperationError("Control center close failed."));
+            void closeControlSurface(true).catch(() => setOperationError("Control center close failed."));
           }}
           onRefresh={() => { void refresh(true); }}
           onOpenCodexResets={() => void openExternalUrl(CODEX_RESETS_URL).catch(() => setOperationError(language === "en" ? "Codex Resets could not be opened." : "无法打开 Codex Resets。"))}

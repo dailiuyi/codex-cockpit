@@ -173,7 +173,9 @@ pub(crate) fn settings_at(data: &Path) -> Result<Option<SyncSettings>, String> {
 pub(crate) fn local_device_id(data: &Path, home: &Path) -> Result<String, String> {
     static ID_LOCK: Mutex<()> = Mutex::new(());
     let _guard = ID_LOCK.lock().map_err(|_| "local_identity_unavailable")?;
-    if let Some(settings) = settings_at(data)? {
+    // Invalid optional transport settings must not block offline collection.
+    // Sync status still reports their error, and a valid configured identity wins.
+    if let Ok(Some(settings)) = settings_at(data) {
         return Ok(settings.device_id);
     }
     let path = data.join("local-device.json");
@@ -314,12 +316,28 @@ pub async fn get_codex_project_usage(
     ))
     .await?;
     let home = dirs::home_dir().ok_or("home_unavailable")?;
-    let device_id = local_device_id(&data, &home)?;
-    identify(&mut result, &device_id);
-    if let Some(settings) = settings_at(&data)? {
-        result.peer_tasks = crate::task_sync::read_peers(&data, &settings.device_id);
-    }
+    attach_local_project_usage(&mut result, &data, &home)?;
     Ok(result)
+}
+fn attach_local_project_usage(
+    result: &mut codex_project_usage::ProjectUsageSnapshot,
+    data: &Path,
+    home: &Path,
+) -> Result<(), String> {
+    identify(result, &local_device_id(data, home)?);
+    match settings_at(data) {
+        Ok(Some(settings)) => {
+            result.peer_tasks = crate::task_sync::read_peers(data, &settings.device_id);
+        }
+        Ok(None) => {}
+        Err(error) => {
+            result.warnings.push(error);
+            if result.status == "ready" {
+                result.status = "partial".into();
+            }
+        }
+    }
+    Ok(())
 }
 fn synced_comfort_feedback(data: &Path) -> Result<Vec<Value>, String> {
     if settings_at(data)?.is_none() {
@@ -645,6 +663,113 @@ mod tests {
         )
         .unwrap();
         assert!(local_device_id(&f.0, &home).is_err());
+    }
+    #[test]
+    fn local_identity_survives_invalid_optional_sync_settings() {
+        for filename in [SETTINGS, "cloud-sync.json"] {
+            for existing_identity in [false, true] {
+                let f = Fixture::new();
+                let home = f.0.join("home");
+                fs::create_dir_all(&home).unwrap();
+                if existing_identity {
+                    write_json(
+                        &f.0.join("local-device.json"),
+                        &serde_json::json!({"deviceId":"local-test"}),
+                    )
+                    .unwrap();
+                }
+                write_json(
+                    &f.0.join(filename),
+                    &serde_json::json!({"deviceId":"../invalid"}),
+                )
+                .unwrap();
+                let original = fs::read(f.0.join(filename)).unwrap();
+                let id = local_device_id(&f.0, &home).unwrap();
+                assert!(safe_id(&id));
+                if existing_identity {
+                    assert_eq!(id, "local-test");
+                }
+                assert_eq!(local_device_id(&f.0, &home).unwrap(), id);
+                assert!(settings_at(&f.0).is_err());
+                assert_eq!(fs::read(f.0.join(filename)).unwrap(), original);
+            }
+        }
+    }
+    #[test]
+    fn local_project_usage_preserves_data_and_reports_invalid_sync_settings() {
+        for filename in [SETTINGS, "cloud-sync.json"] {
+            let f = Fixture::new();
+            let home = f.0.join("home");
+            fs::create_dir_all(&home).unwrap();
+            write_json(
+                &f.0.join("local-device.json"),
+                &serde_json::json!({"deviceId":"local-test"}),
+            )
+            .unwrap();
+            write_json(
+                &f.0.join(filename),
+                &serde_json::json!({"deviceId":"../invalid"}),
+            )
+            .unwrap();
+            let mut result = codex_project_usage::ProjectUsageSnapshot {
+                device_id: None,
+                updated_at: Utc::now().to_rfc3339(),
+                status: "partial".into(),
+                coverage: "complete".into(),
+                scanned_files: 2,
+                pricing_source: "bundled".into(),
+                pricing_updated_at: None,
+                task_metadata_coverage: "complete".into(),
+                projects: vec![],
+                tasks: vec![],
+                peer_tasks: vec![],
+                warnings: vec!["device_identity_unavailable".into()],
+            };
+            attach_local_project_usage(&mut result, &f.0, &home).unwrap();
+            assert_eq!(result.device_id.as_deref(), Some("local-test"));
+            assert_eq!(result.status, "partial");
+            assert_eq!(result.scanned_files, 2);
+            assert_eq!(result.coverage, "complete");
+            assert_eq!(result.warnings, vec![settings_at(&f.0).unwrap_err()]);
+            assert!(result.peer_tasks.is_empty());
+        }
+    }
+    #[test]
+    fn valid_sync_identity_still_takes_precedence_over_offline_identity() {
+        let f = Fixture::new();
+        let home = f.0.join("home");
+        fs::create_dir_all(&home).unwrap();
+        write_json(
+            &f.0.join("local-device.json"),
+            &serde_json::json!({"deviceId":"local-test"}),
+        )
+        .unwrap();
+        write_json(
+            &f.0.join(SETTINGS),
+            &SyncSettings {
+                enabled: false,
+                interval_seconds: 300,
+                device_id: "git-device".into(),
+                remote: "git@github.com:example/usage.git".into(),
+                branch: "main".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(local_device_id(&f.0, &home).unwrap(), "git-device");
+        write_json(
+            &f.0.join("cloud-sync.json"),
+            &serde_json::json!({
+                "endpoint":"https://example.workers.dev", "deviceId":"cloud-device",
+                "spaceId":"space-test", "spaceName":"Test", "role":"owner", "enabled":false,
+                "intervalSeconds":300,
+            }),
+        )
+        .unwrap();
+        assert_eq!(local_device_id(&f.0, &home).unwrap(), "cloud-device");
+        assert_eq!(
+            tokei_usage::read_json(&f.0.join("local-device.json"), 32768).unwrap()["deviceId"],
+            "local-test"
+        );
     }
     #[test]
     fn imports_only_credential_free_https_identities_as_ssh() {
