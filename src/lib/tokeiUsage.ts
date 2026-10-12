@@ -95,7 +95,7 @@ export function withLiveLocalUsage(data: TokeiUsage, projects: ProjectUsageSnaps
   // scanning history. Never replace a complete device ledger with that prefix.
   if (!projects?.deviceId || projects.status === "unavailable" || projects.warnings.includes("scan_limit") || !projects.projects.length) return data;
   const existing = data.devices.find(device => device.id === projects.deviceId);
-  if (!existing || Date.parse(projects.updatedAt) <= Date.parse(existing.updatedAt ?? "")) return data;
+  if (existing && Date.parse(projects.updatedAt) <= Date.parse(existing.updatedAt ?? "")) return data;
   const daily = new Map<string, DailyModelUsage>();
   for (const project of projects.projects) for (const [date, source] of Object.entries(project.daily)) {
     const target = daily.get(date) ?? { ...ZERO, models: [] };
@@ -106,10 +106,13 @@ export function withLiveLocalUsage(data: TokeiUsage, projects: ProjectUsageSnaps
     daily.set(date, target);
   }
   if (!daily.size) return data;
-  return { ...data, devices: data.devices.map(device => device.id === projects.deviceId ? {
-    ...device, updatedAt: projects.updatedAt, stale: false, collectionPartial: projects.status !== "ready",
-    liveLocal: true, daily: { ...device.daily, ...Object.fromEntries(daily) },
-  } : device) };
+  const local = {
+    ...(existing ?? { id: projects.deviceId, ranges: {} }),
+    updatedAt: projects.updatedAt, stale: false, collectionPartial: projects.status !== "ready",
+    liveLocal: true, daily: { ...existing?.daily, ...Object.fromEntries(daily) },
+  };
+  return { ...data, status: data.status === "unavailable" ? projects.status : data.status,
+    devices: existing ? data.devices.map(device => device.id === projects.deviceId ? local : device) : [...data.devices, local] };
 }
 
 export type TaskRelation = "root" | "subagent" | "fork" | "unlinked";

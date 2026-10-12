@@ -1,9 +1,29 @@
 import { describe, expect, it } from "vitest";
-import { aggregateGroupUsage, canonicalModelId, createUsagePreview, formatTokens, periodStart, validateGroupSettings, withLiveLocalUsage, type ProjectUsageSnapshot } from "./tokeiUsage";
+import { aggregateGlobalUsage, aggregateTaskUsage, aggregateGroupUsage, canonicalModelId, createUsagePreview, formatTokens, periodStart, validateGroupSettings, withLiveLocalUsage, type ProjectUsageSnapshot } from "./tokeiUsage";
 
 const now = new Date(2026, 8, 10, 12);
 
 describe("personal Codex usage", () => {
+  it("builds offline totals and respects explicit member assignment", () => {
+    const data = createUsagePreview(now);
+    const daily = structuredClone(data.devices[0].daily);
+    data.devices = [];
+    data.groups = [{ id: "owner", name: "Owner", deviceIds: [] }];
+    const source: ProjectUsageSnapshot = {
+      deviceId: "offline-device", updatedAt: now.toISOString(), status: "ready", coverage: "local",
+      scannedFiles: 1, pricingSource: "none", pricingUpdatedAt: null, warnings: [],
+      projects: [{ id: "one", name: "One", daily }],
+      tasks: [{ id: "task", name: "Task", rootId: "task", relation: "root", daily }],
+    };
+    const merged = withLiveLocalUsage(data, source);
+    const total = aggregateGlobalUsage(merged, "all", now).totalTokens;
+    expect(total).toBeGreaterThan(0);
+    expect(aggregateGroupUsage(merged, "owner", "all", now).totalTokens).toBe(0);
+    merged.groups[0].deviceIds = ["offline-device"];
+    expect(aggregateGroupUsage(merged, "owner", "all", now).totalTokens).toBe(total);
+    expect(aggregateTaskUsage(source, merged, "owner", "all", now).attributed.totalTokens).toBe(total);
+    expect(data.devices).toEqual([]);
+  });
   it("uses a newer live local scan for both model and task-era cost, without changing peers", () => {
     const data = createUsagePreview(now);
     const local = data.devices[0];

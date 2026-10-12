@@ -169,6 +169,46 @@ pub(crate) fn settings_at(data: &Path) -> Result<Option<SyncSettings>, String> {
     validate(&settings)?;
     Ok(Some(settings))
 }
+// Local identity is independent of transport configuration. Never enable sync here.
+pub(crate) fn local_device_id(data: &Path, home: &Path) -> Result<String, String> {
+    static ID_LOCK: Mutex<()> = Mutex::new(());
+    let _guard = ID_LOCK.lock().map_err(|_| "local_identity_unavailable")?;
+    if let Some(settings) = settings_at(data)? {
+        return Ok(settings.device_id);
+    }
+    let path = data.join("local-device.json");
+    if path
+        .try_exists()
+        .map_err(|_| "local_identity_unavailable")?
+    {
+        let value = tokei_usage::read_json(&path, 32768)?;
+        return value["deviceId"]
+            .as_str()
+            .filter(|id| safe_id(id))
+            .map(str::to_owned)
+            .ok_or_else(|| "local_identity_invalid".into());
+    }
+    let legacy = tokei_usage::read_json(&home.join(".tokei/config.json"), 256 * 1024)
+        .ok()
+        .and_then(|value| {
+            value["device_id"]
+                .as_str()
+                .filter(|id| safe_id(id))
+                .map(str::to_owned)
+        });
+    let id = legacy.unwrap_or_else(|| {
+        format!(
+            "device-{:x}-{:x}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos(),
+            std::process::id()
+        )
+    });
+    write_json(&path, &serde_json::json!({"deviceId": id}))?;
+    Ok(id)
+}
 fn legacy_directory(home: &Path) -> Option<(PathBuf, String)> {
     let cfg = tokei_usage::read_json(&home.join(".tokei/config.json"), 256 * 1024).ok()?;
     let id = cfg["device_id"].as_str()?.to_owned();
@@ -273,8 +313,10 @@ pub async fn get_codex_project_usage(
         crate::cloud_sync::pricing_path(&data),
     ))
     .await?;
+    let home = dirs::home_dir().ok_or("home_unavailable")?;
+    let device_id = local_device_id(&data, &home)?;
+    identify(&mut result, &device_id);
     if let Some(settings) = settings_at(&data)? {
-        identify(&mut result, &settings.device_id);
         result.peer_tasks = crate::task_sync::read_peers(&data, &settings.device_id);
     }
     Ok(result)
@@ -588,6 +630,22 @@ pub fn merge_managed_usage(data: &Path, usage: &mut TokeiUsage) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn offline_identity_is_stable_without_enabling_sync() {
+        let f = Fixture::new();
+        let home = f.0.join("home");
+        fs::create_dir_all(&home).unwrap();
+        let first = local_device_id(&f.0, &home).unwrap();
+        assert!(safe_id(&first));
+        assert_eq!(local_device_id(&f.0, &home).unwrap(), first);
+        assert!(settings_at(&f.0).unwrap().is_none());
+        write_json(
+            &f.0.join("local-device.json"),
+            &serde_json::json!({"deviceId": "../bad"}),
+        )
+        .unwrap();
+        assert!(local_device_id(&f.0, &home).is_err());
+    }
     #[test]
     fn imports_only_credential_free_https_identities_as_ssh() {
         assert_eq!(
