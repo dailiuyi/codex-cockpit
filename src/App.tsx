@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { setAppIconTheme } from "./lib/appIcon";
 import { useSharedDailyPlan } from "./hooks/useSharedDailyPlan";
 import { allocateSharedPlan, sharedRecommendation } from "./lib/sharedDailyPlan";
 import { closeControlCenterWindow } from "./lib/bridge";
@@ -38,6 +39,7 @@ import { measureSurfaceHeight } from "./lib/windowMetrics";
 import { usageDateKey } from "./lib/usageDay";
 import { CODEX_RESETS_URL } from "./lib/externalLinks";
 import { useWebsiteResetProbability } from "./lib/useWebsiteResetProbability";
+import { activeResetWatch } from "./lib/resetWatch";
 import { buildMidnightQuotaPlan } from "./lib/midnightQuotaPlan";
 import type { AppDiagnostics, ComfortCode, ComfortPrompt, ProviderId, ProviderSnapshot, ResetForecast, RuntimeState, VolcengineDiagnostics, WidgetPreferences } from "./types";
 
@@ -137,11 +139,20 @@ export default function App() {
 
   useEffect(() => {
     document.documentElement.dataset.appearance = resolvedAppearance;
+    void setAppIconTheme(resolvedAppearance).catch(() => undefined);
   }, [resolvedAppearance]);
 
   useEffect(() => {
     document.documentElement.style.setProperty("--ui-font-scale", String(preferences.fontScale));
   }, [preferences.fontScale]);
+
+  useEffect(() => {
+    document.documentElement.dataset.fontFamily = preferences.fontFamily;
+  }, [preferences.fontFamily]);
+
+  useEffect(() => {
+    document.documentElement.dataset.backgroundBlur = String(preferences.backgroundBlur);
+  }, [preferences.backgroundBlur]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -453,10 +464,12 @@ export default function App() {
     }
   }, [t.errorUnavailable]);
 
-  const closeControlSurface = useCallback(async () => {
+  const closeControlSurface = useCallback(async (collapse = false) => {
     if (controlOpenRef.current) await closeControlCenterWindow();
     controlOpenRef.current = false;
     setControlOpen(false);
+    // Panel switches keep the widget expanded; explicit close uses the layout effect.
+    if (collapse && !effectiveStayExpanded(preferencesRef.current)) setCompact(true);
   }, []);
 
   const openVolcengineDiagnostics = useCallback(async () => {
@@ -568,11 +581,15 @@ export default function App() {
   // Token experience is not a quota percentage. Keep the quota policy's default
   // reference independent from every person's new token feedback and legacy data.
   const comfortCurve = useMemo(() => personalizeComfortCurve([]), []);
-  const resetWatch = useWebsiteResetProbability();
+  const websiteResetWatch = useWebsiteResetProbability();
+  const forecastAlert = activeResetWatch(codexResetForecast, planningNow);
+  // Announced schedules light the bell, but never become a probability input.
+  const resetWatch = forecastAlert?.signalKind === "scheduled"
+    ? forecastAlert : websiteResetWatch ?? forecastAlert;
   // User-selected planning scenario; website votes are not a calibrated 24h forecast.
   // Legacy overrides stay dormant until the user moves the restored slider.
   const planningRisk = (preferences.resetRiskManualEnabled ? preferences.resetRiskOverridePercent : null)
-    ?? resetWatch?.resetChancePercent ?? null;
+    ?? websiteResetWatch?.resetChancePercent ?? null;
   const effectiveResetForecast = codexResetForecast;
   const carryUsageHistory = useMemo(
     () => [...codexDailyUsageHistory, ...runtimeState.dailyUsage.filter((item) => item.provider === "codex")],
@@ -584,7 +601,7 @@ export default function App() {
   );
   const weeklyRemainingPercent = useMemo(() => {
     if (!current || current.provider !== "codex") return null;
-    if (isCodexPlus(current)) return fiveHourRemaining(current);
+    if (isCodexPlus(current) && fiveHourRemaining(current) !== null) return fiveHourRemaining(current);
     return trackedQuotaWindows(current).find(({ period }) => period === "weekly")?.window.remainingPercent ?? null;
   }, [current]);
   const personalUsageCalibration = useMemo(
@@ -612,7 +629,7 @@ export default function App() {
   } : null;
   const sharedPlan = useSharedDailyPlan(planBasis,preferences.resetRiskManualEnabled ? preferences.resetRiskOverridePercent ?? null : null);
   const sharedBasis = sharedPlan.plan?.basis ?? planBasis;
-  const sharedRisk = sharedPlan.plan ? sharedPlan.plan.risk.value ?? resetWatch?.resetChancePercent ?? 10 : planningRisk ?? 10;
+  const sharedRisk = sharedPlan.plan ? sharedPlan.plan.risk.value ?? websiteResetWatch?.resetChancePercent ?? 10 : planningRisk ?? 10;
   const dailyRecommendation: DailyRecommendation | null = localRecommendation && sharedBasis ? (() => {
     const target = sharedRecommendation(sharedBasis, sharedRisk);
     const used = Math.max(0, sharedBasis.remainingPercent - (current?.weeklyWindow?.remainingPercent ?? sharedBasis.remainingPercent));
@@ -653,6 +670,7 @@ export default function App() {
   }, [commitRuntimeState, current?.provider, dailyRecommendation, startupReady]);
   const compactCapsuleRatio = useMemo(() => {
     if (!current || current.provider !== "codex") return null;
+    if (isCodexPlus(current)) return fiveHourRemaining(current) ?? current.weeklyWindow?.remainingPercent ?? null;
     const quotaWindows = trackedQuotaWindows(current);
     const weeklyWindow = quotaWindows.find(({ period }) => period === "weekly") ?? quotaWindows[0] ?? null;
     const todayAdvice = buildTodayQuotaAdvice({
@@ -1012,7 +1030,7 @@ export default function App() {
   }, [compactLayout, controlOpen, stayExpanded]);
 
   useEffect(() => {
-    if (!compact || stayExpanded || controlOpen || widgetTransitioning.current) return;
+    if (!compact || stayExpanded || controlOpen || controlOpenRef.current || widgetTransitioning.current) return;
     void setWidgetExpanded(false, compactLayout, undefined, compactCapsuleWidth).catch(() => setOperationError("Widget layout resize failed."));
   }, [compact, compactCapsuleWidth, compactLayout, controlOpen, stayExpanded]);
 
@@ -1143,8 +1161,11 @@ export default function App() {
       reconnecting={reconnecting}
       recentCodexReset={recentCodexReset}
       resetWatch={resetWatch}
+      resetRiskSource={websiteResetWatch?.resetChancePercent != null ? "website" : "fallback"}
       resetForecast={effectiveResetForecast}
       onOpenResetForecast={(url) => {
+        // Opening a browser can hide the widget without firing mouseleave.
+        // Start the ordinary collapse path before focus moves away.
         handleHover(false);
         void openExternalUrl(url).catch(() => setOperationError("Reset forecast could not be opened."));
       }}
@@ -1206,7 +1227,7 @@ export default function App() {
           onUsageGroupsChange={refreshComfortUsage}
           onCheckUpdate={() => void handleUpdateOpen()}
           onClose={() => {
-            void closeControlSurface().catch(() => setOperationError("Control center close failed."));
+            void closeControlSurface(true).catch(() => setOperationError("Control center close failed."));
           }}
           onRefresh={() => { void refresh(true); }}
           onOpenCodexResets={() => void openExternalUrl(CODEX_RESETS_URL).catch(() => setOperationError(language === "en" ? "Codex Resets could not be opened." : "无法打开 Codex Resets。"))}

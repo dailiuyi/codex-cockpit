@@ -1,9 +1,64 @@
 import { describe, expect, it } from "vitest";
-import { aggregateGroupUsage, canonicalModelId, createUsagePreview, formatTokens, periodStart, validateGroupSettings, withLiveLocalUsage, type ProjectUsageSnapshot } from "./tokeiUsage";
+import { aggregateGlobalUsage, aggregateTaskUsage, aggregateGroupUsage, canonicalModelId, createUsagePreview, formatTokens, periodStart, validateGroupSettings, withLiveLocalUsage, type ProjectUsageSnapshot } from "./tokeiUsage";
 
 const now = new Date(2026, 8, 10, 12);
 
 describe("personal Codex usage", () => {
+  it("builds offline totals and respects explicit member assignment", () => {
+    const data = createUsagePreview(now);
+    const daily = structuredClone(data.devices[0].daily);
+    data.devices = [];
+    data.groups = [{ id: "owner", name: "Owner", deviceIds: [] }];
+    const source: ProjectUsageSnapshot = {
+      deviceId: "offline-device", updatedAt: now.toISOString(), status: "ready", coverage: "local",
+      scannedFiles: 1, pricingSource: "none", pricingUpdatedAt: null, warnings: [],
+      projects: [{ id: "one", name: "One", daily }],
+      tasks: [{ id: "task", name: "Task", rootId: "task", relation: "root", daily }],
+    };
+    const merged = withLiveLocalUsage(data, source);
+    const total = aggregateGlobalUsage(merged, "all", now).totalTokens;
+    expect(total).toBeGreaterThan(0);
+    expect(aggregateGroupUsage(merged, "owner", "all", now).totalTokens).toBe(0);
+    merged.groups[0].deviceIds = ["offline-device"];
+    expect(aggregateGroupUsage(merged, "owner", "all", now).totalTokens).toBe(total);
+    expect(aggregateTaskUsage(source, merged, "owner", "all", now).attributed.totalTokens).toBe(total);
+    expect(data.devices).toEqual([]);
+  });
+  it("inserts the native local ledger only once and preserves it during a partial rescan", () => {
+    const preview = createUsagePreview(now);
+    const data = { ...preview, devices: [], groups: [], defaultGroupId: null, localGroupId: null, status: "unavailable" as const, warnings: ["config_unavailable", "sync_unavailable"] };
+    const projects: ProjectUsageSnapshot = {
+      deviceId: "local-synthetic-device", updatedAt: preview.fetchedAt, status: "ready", coverage: "local",
+      scannedFiles: 1, pricingSource: "bundled-catalog", pricingUpdatedAt: null, warnings: [],
+      projects: [{ id: "one", name: "One", daily: preview.devices[0].daily }],
+    };
+    const merged = withLiveLocalUsage(data, projects);
+    expect(aggregateGlobalUsage(merged, "all", now).totalTokens).toBe(2_000_000);
+    expect(merged.devices).toHaveLength(1);
+    expect(withLiveLocalUsage(merged, projects)).toBe(merged);
+    expect(withLiveLocalUsage(merged, { ...projects, updatedAt: "2026-09-10T12:00:00Z", status: "partial", warnings: ["scan_limit"] })).toBe(merged);
+    expect(data.devices).toEqual([]);
+    expect(merged.groups).toEqual([]);
+    expect(withLiveLocalUsage(data, { ...projects, status: "unavailable" })).toBe(data);
+    expect(withLiveLocalUsage(data, { ...projects, deviceId: null })).toBe(data);
+    const retained = { ...data, devices: preview.devices };
+    const withPeer = withLiveLocalUsage(retained, projects);
+    expect(withPeer.devices[0]).toBe(retained.devices[0]);
+    expect(withPeer.devices[1].id).toBe(projects.deviceId);
+  });
+  it("creates a live local ledger on fresh installs without an older sync device", () => {
+    const data = createUsagePreview(now);
+    const daily = data.devices[0].daily;
+    data.devices = [];
+    data.status = "unavailable";
+    const projects: ProjectUsageSnapshot = { deviceId: "Demo Mac", updatedAt: now.toISOString(), status: "ready", coverage: "local", scannedFiles: 1, pricingSource: "test", pricingUpdatedAt: null, warnings: [], projects: [{ id: "local", name: "Local", daily }] };
+    const next = withLiveLocalUsage(data, projects);
+    expect(next.devices).toHaveLength(1);
+    expect(aggregateGroupUsage(next, "demo", "today", now).hasData).toBe(true);
+    expect(aggregateGroupUsage(next, "demo", "today", now).totalTokens).toBeGreaterThan(0);
+    expect(withLiveLocalUsage(data, { ...projects, status: "unavailable", projects: [] })).toBe(data);
+    expect(data.devices).toHaveLength(0);
+  });
   it("uses a newer live local scan for both model and task-era cost, without changing peers", () => {
     const data = createUsagePreview(now);
     const local = data.devices[0];

@@ -9,6 +9,35 @@ import { ControlCenter } from "./ControlCenter";
 import { buildMidnightQuotaPlan } from "../lib/midnightQuotaPlan";
 import { COMFORT_CURVE_VERSION } from "../lib/comfortFeedback";
 import type { ComfortFeedbackRecord } from "../types";
+import { UI_FONT_OPTIONS } from "../lib/fonts";
+
+it.each(["en", "zh-CN"] as const)("offers the requested fonts, with clear local-font fallback guidance in %s", (language) => {
+  const onPreferences = vi.fn();
+  const preferences = { ...DEFAULT_WIDGET_PREFERENCES, language, fontFamily: "smiley" as const, fontScale: 1.75 };
+  const props = { preferences, language, onClose: vi.fn(), onRefresh: vi.fn(), onPreferences, autostartEnabled: false, onAutostart: vi.fn() };
+  const view = render(<ControlCenter {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: language === "en" ? "Settings" : "设置" }));
+  const fontSelect = screen.getByRole("combobox", { name: language === "en" ? "Font" : "字体" });
+  expect(fontSelect).toHaveValue("smiley");
+  expect(fontSelect).not.toHaveAttribute("aria-describedby");
+  expect(screen.getByRole("slider", { name: language === "en" ? "Text size" : "字大小" })).toHaveAttribute("value", "1.75");
+  expect(screen.queryByLabelText(language === "en" ? "Font preview" : "字体预览")).not.toBeInTheDocument();
+  expect(screen.queryByText(language === "en" ? "Codex Cockpit · Used today 12.5%" : "Codex 驾驶舱 · 今日已用 12.5%")).not.toBeInTheDocument();
+  expect(screen.queryByText(language === "en" ? "Applies immediately without changing the text size." : "切换后立即生效，字号保持不变。")).not.toBeInTheDocument();
+  expect(view.container.querySelector(".minimal-font-preview")).toBeNull();
+  expect(Array.from(fontSelect.querySelectorAll("option")).map(option => option.value)).toEqual(UI_FONT_OPTIONS.map(option => option.id));
+  for (const { id } of UI_FONT_OPTIONS) {
+    fireEvent.change(fontSelect, { target: { value: id } });
+    expect(onPreferences).toHaveBeenLastCalledWith(expect.objectContaining({ fontFamily: id, fontScale: 1.75 }));
+  }
+  for (const fontFamily of ["yahei", "times", "fz-song"] as const) {
+    view.rerender(<ControlCenter {...props} preferences={{ ...preferences, fontFamily }} />);
+    expect(screen.getByRole("combobox", { name: language === "en" ? "Font" : "字体" })).toHaveValue(fontFamily);
+    expect(screen.getByRole("combobox", { name: language === "en" ? "Font" : "字体" })).toHaveAccessibleDescription(language === "en"
+      ? "Requires a local installation and falls back to the system font. Commercial font files are not bundled."
+      : "需在本机安装；未安装时自动使用系统字体。本应用不打包商业字体。");
+  }
+});
 
 it("puts Usage first in the control center navigation", () => {
   render(<ControlCenter preferences={DEFAULT_WIDGET_PREFERENCES} language="zh-CN" onClose={() => {}} onRefresh={() => {}} onPreferences={() => {}} autostartEnabled={false} onAutostart={() => {}} />);
@@ -21,6 +50,20 @@ it("puts Usage first in the control center navigation", () => {
   cleanup();
   render(<ControlCenter preferences={DEFAULT_WIDGET_PREFERENCES} language="zh-CN" onClose={() => {}} onRefresh={() => {}} onPreferences={() => {}} autostartEnabled={false} onAutostart={() => {}} />);
   expect(screen.getByRole("button", { name: "用量" })).toHaveAttribute("aria-pressed", "true");
+});
+
+it("changes the UI font from Display while preserving the other preferences", () => {
+  const onPreferences = vi.fn();
+  const preferences = { ...DEFAULT_WIDGET_PREFERENCES, fontScale: 1.3, automaticUpdates: false };
+  const props = { language: "zh-CN" as const, onClose: () => {}, onRefresh: () => {}, onPreferences, autostartEnabled: false, onAutostart: () => {} };
+  const { rerender } = render(<ControlCenter {...props} preferences={preferences} />);
+  fireEvent.click(screen.getByRole("button", { name: "设置" }));
+  const font = screen.getByRole("combobox", { name: "字体" });
+  expect(font).toHaveValue(preferences.fontFamily);
+  fireEvent.change(font, { target: { value: "yahei" } });
+  expect(onPreferences).toHaveBeenLastCalledWith({ ...preferences, fontFamily: "yahei" });
+  rerender(<ControlCenter {...props} preferences={onPreferences.mock.lastCall![0]} />);
+  expect(screen.getByRole("combobox", { name: "字体" })).toHaveValue("yahei");
 });
 
 it("edits and resets a person's ring color through preferences", () => {
@@ -168,6 +211,19 @@ describe("ControlCenter essentials", () => {
     expect(screen.queryByText("Backup and migration")).not.toBeInTheDocument();
   });
 
+  it("keeps page navigation outside the scrolling settings content", () => {
+    renderControlCenter();
+    const navigation = screen.getByRole("navigation", { name: "Control center pages" });
+    const body = screen.getByRole("dialog").querySelector(".control-body")!;
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    body.scrollTop = 500;
+    expect(body.contains(navigation)).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+    expect(screen.getByRole("button", { name: "Usage" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("textbox", { name: "Server URL" })).toBeInTheDocument();
+  });
+
   it("requests an immediate refresh from the compact status row", () => {
     const onRefresh = vi.fn();
     renderControlCenter(onRefresh);
@@ -210,6 +266,24 @@ describe("ControlCenter essentials", () => {
     expect(onDrag).not.toHaveBeenCalled();
   });
 
+  it("focuses text fields before native mouse focus while preserving clicks and page navigation", () => {
+    installPointerEvent();
+    const onDrag = vi.fn();
+    renderControlCenter(vi.fn(), vi.fn(), vi.fn(), { ...DEFAULT_WIDGET_PREFERENCES, language: "en" }, vi.fn(), onDrag);
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const input = screen.getByRole("textbox", { name: "Server URL" });
+    const pointer = new window.PointerEvent("pointerdown", { button: 0, bubbles: true, cancelable: true });
+    fireEvent(input, pointer);
+    expect(input).toHaveFocus();
+    expect(pointer.defaultPrevented).toBe(false);
+    expect(onDrag).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Usage" }));
+    expect(screen.getByRole("button", { name: "Usage" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("textbox", { name: "Server URL" })).toBeInTheDocument();
+  });
+
   it("opens the Codex Resets history from the status row", () => {
     const onOpenCodexResets = vi.fn();
     renderControlCenter(vi.fn(), vi.fn(), vi.fn(), { ...DEFAULT_WIDGET_PREFERENCES, language: "en" }, onOpenCodexResets);
@@ -240,6 +314,9 @@ describe("ControlCenter essentials", () => {
 
     fireEvent.click(screen.getByRole("radio", { name: /^Dark$/i }));
     expect(onPreferences).toHaveBeenCalledWith(expect.objectContaining({ appearanceMode: "dark" }));
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Background blur" }));
+    expect(onPreferences).toHaveBeenCalledWith(expect.objectContaining({ backgroundBlur: false }));
 
     fireEvent.click(screen.getByRole("radio", { name: "中文" }));
     expect(onPreferences).toHaveBeenCalledWith(expect.objectContaining({ language: "zh-CN" }));

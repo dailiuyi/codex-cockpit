@@ -7,7 +7,7 @@
 还剩多少额度？今天用了多少？哪个任务最能「吃」Token？<br>
 把这些小问号，装进屏幕边上的一个小窗口。
 
-[⬇️ 下载 Mac / Windows 版](https://github.com/HouSiyuan2001/codex-cockpit/releases/latest) · [✨ 看看它长什么样](https://codex-cockpit.pages.dev/) · [🎬 我榨干了 Codex](https://www.bilibili.com/video/BV1SXbv6REWz/) · [English](docs/README.en.md)
+[⬇️ 下载 Mac / Windows 版](https://github.com/HouSiyuan2001/codex-cockpit/releases) · [✨ 官方网站](https://codex-cockpit.pages.dev/) · [🎬 我榨干了 Codex](https://www.bilibili.com/video/BV1SXbv6REWz/) · [English](docs/README.en.md)
 
 </div>
 
@@ -47,10 +47,14 @@
 
 ## 两步，带它回家
 
-1. 打开 [最新版本下载页](https://github.com/HouSiyuan2001/codex-cockpit/releases/latest)：Mac 选 `universal.dmg`，Windows x64 选 `x64-setup.exe`。
+1. 打开 [版本下载页](https://github.com/HouSiyuan2001/codex-cockpit/releases)：Mac 选 `universal.dmg`，Windows x64 选 `x64-setup.exe`。（Linux 目前可通过源码构建运行，依赖与命令见 [开发文档](docs/DESKTOP-DEVELOPMENT-SOP.md)。）
 2. 安装并打开，先从本机用量看起。云同步不是必填项，慢慢来就好。
 
-需要的时候，在「设置 → 应用更新」检查新版；下载后由你确认重启安装。
+App 会自动查找本机 Codex 数据目录。找不到时，到「设置 → 本机 Codex 数据」选择目录并确认读取；没有找到记录不会被当作用量为零。[首次安装说明](docs/LOCAL-USAGE.md)
+
+内置常用模型的参考价格，缺价或记录不完整时保留未知；金额是估算，不是账单。[金额怎么算](docs/LOCAL-PRICING.md)
+
+需要的时候，在「设置 → 应用更新」检查新版；下载后由你确认重启安装。测试版安装包请在 Releases 列表中选择对应版本。
 
 > 安装前的小提醒：Mac 尚未 Apple 公证，Windows 尚未发布者签名。请核对下载来源和校验表，不要关闭系统安全保护。金额是估算，不是官方账单。
 
@@ -74,6 +78,8 @@
 ```
 
 [AI 安装与答疑](skills/codex-cockpit/SKILL.md) · [更多提示词](docs/CODEX-HELP.md)
+
+经常使用的话，可以把 Skill 安装到自己的 Codex。仓库已公开，不需要拷贝开发者的私人配置。
 
 </details>
 

@@ -1,10 +1,22 @@
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync } from 'node:fs';
 
-// Defense-in-depth, not a guarantee. Binary assets and commit author metadata need manual review.
-const paths = [...new Set(execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {encoding:'utf8'}).split('\0').filter(Boolean))];
+// Defense-in-depth, not a guarantee. Review binary assets and commit authors separately.
+// Source ZIPs have no Git metadata but must pass the same current-source privacy scan.
+function sourceFiles(root = '.') {
+  return readdirSync(root, { withFileTypes: true }).flatMap(entry => {
+    if (['.git', 'node_modules', 'target', 'dist', 'coverage', 'artifacts', '.wrangler', '.DS_Store'].includes(entry.name)) return [];
+    const path = root === '.' ? entry.name : `${root}/${entry.name}`;
+    if (entry.isSymbolicLink()) throw new Error(`Refusing linked source: ${path}`);
+    return entry.isDirectory() ? sourceFiles(path) : [path];
+  });
+}
+const hasGit = existsSync('.git');
+const paths = hasGit
+  ? [...new Set(execFileSync('git', ['ls-files', '--cached', '--others', '--exclude-standard', '-z'], {encoding:'utf8'}).split('\0').filter(Boolean))]
+  : sourceFiles();
 const failures = [];
-const forbiddenFile = /(^|\/)(auth\.json|cloud-sync\.json|usage-sync\.json|cloud-snapshots|\.dev\.vars[^/]*|wrangler\.local\.[^/]+|\.env(?!\.example)[^/]*|id_rsa|id_ed25519)(\/|$)|\.(sqlite3?|db|p12|pfx|pem|key)$/i;
+const forbiddenFile = /(^|\/)(auth\.json|cloud-sync\.json|usage-sync\.json|local-usage\.json|local-usage-cache\.json|cloud-snapshots|\.dev\.vars[^/]*|wrangler\.local\.[^/]+|\.env(?!\.example)[^/]*|id_rsa|id_ed25519)(\/|$)|\.(sqlite3?|db|p12|pfx|pem|key)$/i;
 function scan(path, data, label = path) {
   if (forbiddenFile.test(path) || /(^|\/)\.research(\/|$)/.test(path)) failures.push(`${label}: forbidden runtime/credential file`);
   if (data.includes(0) || /\.(png|ico|icns|woff2?)$/i.test(path)) return;
@@ -23,6 +35,7 @@ function scan(path, data, label = path) {
 for (const path of paths) scan(path, readFileSync(path));
 let historyBlobs = 0;
 if (process.argv.includes('--history')) {
+  if (!hasGit) throw new Error('History audit requires a Git checkout; use audit:public for source ZIPs.');
   const rows = execFileSync('git', ['rev-list', '--objects', '--all'], { encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 }).trim().split('\n');
   for (const row of rows) {
     const space = row.indexOf(' ');

@@ -1,6 +1,7 @@
 import { ArrowClockwise, ArrowSquareOut, GearSix, Monitor, Moon, Sun, X } from "@phosphor-icons/react";
 import { useMemo, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { personalFeedbackView } from "../lib/personComfort";
+import { UI_FONT_OPTIONS, normalizeFontFamily } from "../lib/fonts";
 import { personalizeComfortCurve } from "../lib/comfortFeedback";
 import { useModalDialog } from "../lib/modalDialog";
 import { setControlCenterCalendarOpen } from "../lib/bridge";
@@ -13,6 +14,7 @@ import { ResetRiskQuotaHeatmap } from "./ResetRiskQuotaHeatmap";
 import { CodexUsagePanel } from "./CodexUsagePanel";
 import { TeamMemberSettings } from "./TeamMemberSettings";
 import { CloudSyncSettings } from "./CloudSyncSettings";
+import { LocalUsageSourceSettings } from "./LocalUsageSourceSettings";
 
 interface Props {
   preferences: WidgetPreferences;
@@ -64,9 +66,14 @@ export function ControlCenter({ preferences, language, comfortFeedback = [], dai
     codexResets: "打开 Codex Resets",
     settings: "设置",
     display: "显示",
+    font: "字体",
+    localFontHint: "需在本机安装；未安装时自动使用系统字体。本应用不打包商业字体。",
     fontSize: "字大小",
+    fontFamily: "界面字体",
     language: "语言",
     appearance: "主题",
+    backgroundBlur: "背景模糊",
+    backgroundBlurHint: "关闭后使用清晰透明背景",
     system: "跟随系统",
     light: "浅色",
     dark: "深色",
@@ -86,9 +93,14 @@ export function ControlCenter({ preferences, language, comfortFeedback = [], dai
     codexResets: "Open Codex Resets",
     settings: "Settings",
     display: "Display",
+    font: "Font",
+    localFontHint: "Requires a local installation and falls back to the system font. Commercial font files are not bundled.",
     fontSize: "Text size",
+    fontFamily: "UI font",
     language: "Language",
     appearance: "Theme",
+    backgroundBlur: "Background blur",
+    backgroundBlurHint: "Use a clear transparent background when off",
     system: "System",
     light: "Light",
     dark: "Dark",
@@ -103,6 +115,7 @@ export function ControlCenter({ preferences, language, comfortFeedback = [], dai
     done: "Done",
   };
   const updatePreferences = (patch: Partial<WidgetPreferences>) => onPreferences({ ...preferences, ...patch });
+  const fontNeedsLocalInstallation = UI_FONT_OPTIONS.find(option => option.id === preferences.fontFamily)?.localOnly === true;
   const productName = zh ? "Codex 驾驶舱" : "Codex Cockpit";
   const changeCalendarOpen = (open: boolean) => {
     setCalendarOpen(open);
@@ -120,8 +133,18 @@ export function ControlCenter({ preferences, language, comfortFeedback = [], dai
     onDrag();
   };
 
+  const handleInputPointerDown = (event: ReactPointerEvent<HTMLElement>) => {
+    const target = event.target;
+    if (event.button > 0 || !(target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) || target.disabled) return;
+    if (target instanceof HTMLInputElement && !["text", "url", "password", "search", "email", "tel", "number"].includes(target.type)) return;
+    // GTK WebKit reveals inputs by scrolling their ancestors on mouse focus.
+    // Focus before its default mousedown path so the visible field and its
+    // hit region stay aligned. Default caret/selection handling remains intact.
+    target.focus({ preventScroll: true });
+  };
+
   return (
-    <section ref={dialogRef} className={`control-center control-center--minimal${page === "usage" && calendarOpen ? " control-center--calendar-open" : ""}`} role="dialog" aria-modal="true" aria-labelledby="control-center-title" tabIndex={-1} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()}>
+    <section ref={dialogRef} className={`control-center control-center--minimal${page === "usage" && calendarOpen ? " control-center--calendar-open" : ""}`} role="dialog" aria-modal="true" aria-labelledby="control-center-title" tabIndex={-1} onPointerDownCapture={handleInputPointerDown} onPointerDown={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()}>
       <header
         className="control-header control-header--draggable"
         onPointerDown={handleHeaderPointerDown}
@@ -130,23 +153,31 @@ export function ControlCenter({ preferences, language, comfortFeedback = [], dai
         <button type="button" onClick={onClose} aria-label={zh ? "关闭" : "Close"} data-dialog-initial-focus><X /></button>
       </header>
 
-      <div className="control-body control-body--minimal">
-        <nav className="usage-page-tabs" aria-label={zh ? "控制中心页面" : "Control center pages"}>
+      <nav className="usage-page-tabs" aria-label={zh ? "控制中心页面" : "Control center pages"}>
           <button type="button" aria-pressed={page === "usage"} onClick={() => changePage("usage")}>{zh ? "用量" : "Usage"}</button>
           <button type="button" aria-pressed={page === "quota"} onClick={() => changePage("quota")}>{zh ? "额度" : "Quota"}</button>
           <button type="button" aria-pressed={page === "settings"} onClick={() => changePage("settings")}><GearSix aria-hidden="true" />{labels.settings}</button>
-        </nav>
+      </nav>
+      <div className="control-body control-body--minimal">
         {page === "usage" ? <CodexUsagePanel zh={zh} initialUsage={comfortUsage} onOpenSettings={() => changePage("settings")} calendarOpen={calendarOpen} onCalendarOpenChange={changeCalendarOpen} calendarPortalTarget={calendarPortalTarget} /> : page === "settings" ? <div className="control-settings-page" aria-label={labels.settings}>
-        <TeamMemberSettings usage={comfortUsage} loadingError={comfortUsageError} preferences={preferences} zh={zh} onPreferences={onPreferences} onSaved={onUsageGroupsChange} />
-        <CloudSyncSettings usage={comfortUsage} zh={zh} onSynced={onUsageGroupsChange} />
-
         <section className="minimal-section" aria-labelledby="minimal-display-title">
           <header className="minimal-section-header"><strong id="minimal-display-title">{labels.display}</strong></header>
+          <div className="minimal-font-field">
+            <label htmlFor="minimal-font-family">{labels.font}</label>
+            <select id="minimal-font-family" value={preferences.fontFamily} aria-describedby={fontNeedsLocalInstallation ? "minimal-font-hint" : undefined} onChange={(event) => updatePreferences({ fontFamily: normalizeFontFamily(event.target.value, preferences.fontFamily) })}>
+              {UI_FONT_OPTIONS.map(option => <option key={option.id} value={option.id}>{zh ? option.zh : option.en}</option>)}
+            </select>
+            {fontNeedsLocalInstallation && <small id="minimal-font-hint">{labels.localFontHint}</small>}
+          </div>
           <label className="minimal-slider-field">
             <span>{labels.fontSize}<output>{Math.round(preferences.fontScale * 100)}%</output></span>
             <RangeSlider min="1" max="2" step="0.05" value={preferences.fontScale} onChange={(event) => updatePreferences({ fontScale: Number(event.target.value) })} onInteractionChange={onSliderInteraction} aria-label={labels.fontSize} />
           </label>
         </section>
+
+        <TeamMemberSettings usage={comfortUsage} loadingError={comfortUsageError} preferences={preferences} zh={zh} onPreferences={onPreferences} onSaved={onUsageGroupsChange} />
+        <CloudSyncSettings usage={comfortUsage} zh={zh} onSynced={onUsageGroupsChange} />
+        <LocalUsageSourceSettings zh={zh} onSaved={() => { void onUsageGroupsChange?.(); onRefresh(); }} />
 
         <section className="minimal-section" aria-labelledby="minimal-appearance-title">
           <header className="minimal-section-header"><strong id="minimal-appearance-title">{labels.appearance}</strong></header>
@@ -160,6 +191,12 @@ export function ControlCenter({ preferences, language, comfortFeedback = [], dai
                 <Icon /><span>{label}</span>
               </button>
             ))}
+          </div>
+          <div className="minimal-toggle-list minimal-toggle-list--appearance">
+            <label className="minimal-toggle-row">
+              <span><strong>{labels.backgroundBlur}</strong><small>{labels.backgroundBlurHint}</small></span>
+              <span className="switch"><input type="checkbox" aria-label={labels.backgroundBlur} checked={preferences.backgroundBlur} onChange={(event) => updatePreferences({ backgroundBlur: event.target.checked })} /><i /></span>
+            </label>
           </div>
         </section>
 

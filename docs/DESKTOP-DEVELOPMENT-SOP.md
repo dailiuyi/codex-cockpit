@@ -16,7 +16,14 @@ This project is a Tauri desktop application. Website-only gates such as SEO, mob
 - Treat each provider as an isolated failure domain and preserve last-known-good data.
 - Cover loading, healthy, stale, signed-out, unavailable, and partial multi-provider states.
 - Keep browser preview data synthetic; validate real provider access only in Tauri.
-- Use platform-specific behavior only behind explicit Windows/macOS boundaries.
+- Use platform-specific behavior only behind explicit platform boundaries (Windows/macOS/Linux).
+
+## Platform prerequisites
+
+- **Linux (Debian/Ubuntu)**:
+  ```bash
+  sudo apt install -y build-essential libgtk-3-dev libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev
+  ```
 
 ## Fast handoff gate
 

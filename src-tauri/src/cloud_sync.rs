@@ -229,7 +229,11 @@ pub async fn exchange_daily_plan(app: tauri::AppHandle, body: Value) -> Result<V
 }
 
 fn entry(endpoint: &str, device: &str) -> Result<keyring::Entry, String> {
-    if !cfg!(any(target_os = "macos", target_os = "windows")) {
+    if !cfg!(any(
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "linux"
+    )) {
         return Err("cloud_secure_store_unsupported".into());
     }
     keyring::Entry::new(SERVICE, &credential_key(endpoint, device))
@@ -302,6 +306,9 @@ async fn request_with_bootstrap(
 fn verify_device(data: &Path, device: &str) -> Result<(), String> {
     if !usage_sync::safe_id(device) {
         return Err("cloud_device_required".into());
+    }
+    if crate::local_usage::saved_device_id(data)?.is_some_and(|id| id != device) {
+        return Err("cloud_identity_mismatch".into());
     }
     let legacy = data.join("usage-sync.json");
     if legacy.exists() {
