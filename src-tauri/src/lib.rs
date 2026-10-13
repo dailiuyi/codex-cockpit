@@ -1007,6 +1007,22 @@ fn apply_widget_window_presence(
         .map_err(|error| format!("failed to toggle always-on-top: {error}"))?;
     #[cfg(target_os = "macos")]
     apply_macos_window_presence(window, always_on_top)?;
+    #[cfg(target_os = "linux")]
+    {
+        let native_window = window.clone();
+        window
+            .run_on_main_thread(move || {
+                use gtk::prelude::*;
+                if let Ok(gtk_window) = native_window.gtk_window() {
+                    // Reassert the native hint even when GTK's cached setting
+                    // already matches: XWayland may lose it when mapping.
+                    if let Some(surface) = gtk_window.window() {
+                        surface.set_keep_above(always_on_top);
+                    }
+                }
+            })
+            .map_err(|error| format!("failed to apply Linux window presence: {error}"))?;
+    }
     Ok(())
 }
 
@@ -3107,6 +3123,22 @@ pub fn run() {
                 let _ = apply_lock(app.handle(), true);
             }
             if let Some(window) = app.get_webview_window("widget") {
+                #[cfg(target_os = "linux")]
+                {
+                    use gtk::prelude::*;
+                    let presence_handle = app.handle().clone();
+                    window.gtk_window()?.connect_map(move |gtk_window| {
+                        let always_on_top = presence_handle
+                            .state::<AppState>()
+                            .preferences
+                            .lock()
+                            .map(|preferences| preferences.always_on_top)
+                            .unwrap_or(true);
+                        if let Some(surface) = gtk_window.window() {
+                            surface.set_keep_above(always_on_top);
+                        }
+                    });
+                }
                 if let Err(error) = apply_widget_window_presence(&window, preferences.always_on_top)
                 {
                     eprintln!("widget presence policy failed: {error}");

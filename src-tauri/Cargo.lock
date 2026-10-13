@@ -3061,6 +3061,7 @@ dependencies = [
  "cbc",
  "chrono",
  "dirs 6.0.0",
+ "gtk",
  "keyring",
  "libc",
  "objc2",
