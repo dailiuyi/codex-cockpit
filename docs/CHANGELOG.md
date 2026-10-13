@@ -1,15 +1,23 @@
 # Changelog
 
-## 0.3.0-beta.5 - Unreleased
+## 0.3.0 - 2026-10-13
 
-- Adapt Gitee main through 6f4fbba: GPT-6.1 Sol pricing, live local usage reconciliation, stable incremental totals, current reset-watch API and collapse after opening it.
-- Keep GitHub self-hosting, opt-in task sharing and signed updater channels.
-- Reject unknown nested snapshot/feedback fields; bound streaming JSON; require Cloudflare rate-limit bindings; use single-use 24-hour invite defaults.
-- Add owner-confirmed device revocation without deleting recovery data.
-- Update desktop/deployment tooling dependencies and add publication history/dependency checks.
-- Add a user product manual, AI installation/Q&A routing and administrator maintenance guidance. Keep voluntary coffee support.
+- Publish synchronized Mac universal and Windows x64 packages with signed stable-channel updates.
+- Fit full task/model donut readouts at larger font sizes and keep long trend peak labels within their card.
 
-This is a source candidate, not a published installer or deployed backend.
+- Integrate community PR #1 (persistent fonts), #3 (macOS Dock policy) and #4 (standalone local usage), preserving contributor commits and current native device identities.
+- Fresh installations discover local Codex records, create a stable local identity and retain cached usage without requiring Tokei or cloud setup; users can confirm a manually selected directory.
+- Bundle reference prices for GPT-5.6, GPT-6 and GPT-6.1 Sol. Preserve custom/shared prices and distinguish missing prices or context from zero cost.
+- Add seven font choices, a readable 150% default, responsive ring labels and optional background blur. Proprietary fonts remain local-only.
+- Fix Plus dual-ring alignment, missing quota-window labels, Windows expansion overhead and capsule collapse after mood/reminder interactions.
+- Restore the original light icon, smooth the dark artwork, add transparent rounded corners and spacing, and switch runtime icons with the theme on Mac and Windows.
+- Read scheduled reset announcements, retain known usage during incremental rescans, and keep task/model costs consistent.
+- On Windows, also read still-active original Codex sessions after automatic directory migration, deduplicating copied records; manual directory selection keeps its explicit scope.
+- Verify rounded icons by exact RGBA pixels across PNG encodings; retain strict Rust checks on current toolchains.
+- Preserve main's nested snapshot/feedback validation, bounded streaming JSON, Cloudflare rate-limit bindings, single-use 24-hour invitations and owner-confirmed device revocation.
+- Update dependencies and publication/history checks, keep self-hosted opt-in synchronization and signed update channels, and retain the new product homepage and documentation layout.
+
+Desktop publication does not deploy the backend. Compatibility and verification boundaries: [main/PR integration](INTEGRATION-20261013.md) and [Windows integration](WINDOWS-INTEGRATION.md).
 
 ## 0.3.0-beta.4 - 2026-10-02
 

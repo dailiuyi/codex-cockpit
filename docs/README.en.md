@@ -5,7 +5,7 @@
 What's left of your quota? How much did you use today? Which task ate the most tokens?<br>
 A quiet little window keeps those answers close by.
 
-[Download for Mac / Windows](https://github.com/HouSiyuan2001/codex-cockpit/releases/latest) · [Take a look](https://codex-cockpit.pages.dev/) · [中文](../README.md)
+[Download for Mac / Windows](https://github.com/HouSiyuan2001/codex-cockpit/releases) · [Official website](https://codex-cockpit.pages.dev/) · [中文](../README.md)
 
 ## Your AI's little sidekick 🐾
 
@@ -21,7 +21,9 @@ This is an independent community project, not an OpenAI product. Website preview
 
 ## Bring it home
 
-Download the [latest release](https://github.com/HouSiyuan2001/codex-cockpit/releases/latest): choose `universal.dmg` for Apple Silicon / Intel Macs, or `x64-setup.exe` for Windows x64. Install, open, and start with local tracking.
+Download the corresponding package from [Releases](https://github.com/HouSiyuan2001/codex-cockpit/releases), including pre-releases: choose `universal.dmg` for Apple Silicon / Intel Macs, or `x64-setup.exe` for Windows x64. Install, open, and start with local tracking.
+
+The app discovers local Codex records automatically. If it cannot find them, select and confirm a directory in Settings. Missing records stay distinct from zero usage. [Local installation](LOCAL-USAGE.md) · [Cost estimates](LOCAL-PRICING.md)
 
 Updates are checked in Settings; you confirm before restarting to install.
 

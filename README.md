@@ -10,7 +10,7 @@
 把这些问号，装进屏幕边缘的一个轻量悬浮小窗里。
 
 <p align="center">
-  <a href="https://github.com/HouSiyuan2001/codex-cockpit/releases/latest"><strong>⬇️ 下载 Mac / Windows 版</strong></a> ·
+  <a href="https://github.com/HouSiyuan2001/codex-cockpit/releases"><strong>⬇️ 下载 Mac / Windows 版</strong></a> ·
   <a href="https://codex-cockpit.pages.dev/"><strong>✨ 在线交互预览</strong></a> ·
   <a href="https://www.bilibili.com/video/BV1SXbv6REWz/"><strong>🎬 演示视频</strong></a> ·
   <a href="docs/README.en.md"><strong>English Docs</strong></a>
@@ -51,10 +51,14 @@ Codex 驾驶舱替你把这些指标规整好：平时它是一只安静贴在�
 
 ## 两步安装与快速上手
 
-1. 打开 [最新版本下载页 (Releases)](https://github.com/HouSiyuan2001/codex-cockpit/releases/latest)：
+1. 打开 [最新版本下载页 (Releases)](https://github.com/HouSiyuan2001/codex-cockpit/releases)：
    - **macOS**：选择 `universal.dmg`；
    - **Windows (x64)**：选择 `x64-setup.exe`。
 2. 安装后启动应用，即可直接读取本机统计数据。云同步功能属于可选特性，按需开启即可。
+
+App 会自动查找本机 Codex 数据目录。找不到时，到「设置 → 本机 Codex 数据」选择目录并确认读取；没有找到记录不会被当作用量为零。[首次安装说明](docs/LOCAL-USAGE.md)
+
+内置常用模型的参考价格，缺价或记录不完整时保留未知；金额是估算，不是账单。[金额怎么算](docs/LOCAL-PRICING.md)
 
 后续如需更新，可在应用内点击「设置 ➔ 应用更新」检查新版本；下载完成后需由用户手动确认重启应用以完成替换。
 
@@ -75,6 +79,23 @@ Codex 驾驶舱替你把这些指标规整好：平时它是一只安静贴在�
 ---
 
 ## 开发者与高级配置资料
+
+<details>
+<summary>🤖 不想自己装？让你的 AI 来帮忙</summary>
+
+把这段话发给自己的 Codex：
+
+```text
+请帮我安装 Codex 驾驶舱：https://github.com/HouSiyuan2001/codex-cockpit
+先读 skills/codex-cockpit/SKILL.md，根据我的系统选最新 Release 安装包，
+核对文件后协助安装。保留已有设置，不部署服务器、不关闭安全保护。
+```
+
+[AI 安装与答疑](skills/codex-cockpit/SKILL.md) · [更多提示词](docs/CODEX-HELP.md)
+
+经常使用的话，可以把 Skill 安装到自己的 Codex。仓库已公开，不需要拷贝开发者的私人配置。
+
+</details>
 
 <details>
 <summary>🛠️ 开发者、AI 协同与小团队部署文档</summary>
